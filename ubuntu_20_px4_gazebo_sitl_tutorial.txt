@@ -1,0 +1,26 @@
+sudo apt install libgazebo9-dev gazebo9 python3-jinja2 python3-numpy python3-toml libopencv-dev
+mkdir src
+cd src
+git clone https://github.com/PX4/Firmware.git --branch v1.9.2 --depth 1
+cd Firmware
+sed -i 's/TRUE/true/' Tools/sitl_gazebo/include/gazebo_opticalflow_plugin.h
+DONT_RUN=1 make px4_sitl_default gazebo
+nano ~/.bashrc	# add:
+		# source Tools/setup_gazebo.bash ~/src/Firmware ~/src/Firmware/build/px4_sitl_default >/dev/null
+		# export ROS_PACKAGE_PATH=$ROS_PACKAGE_PATH:~/src/Firmware
+		# export ROS_PACKAGE_PATH=$ROS_PACKAGE_PATH:~/src/Firmware/Tools/sitl_gazebo
+cd ~/catkin_ws
+rosinstall_generator --upstream gazebo_ros controller_manager resource_retriever nodelet rqt_gui image_transport cv_bridge --deps --rosdistro melodic > /tmp/gazebo_ros.rosinstall
+gedit /tmp/gazebo_ros.rosinstall	# need to upgrade a few packages
+					# gazebo_ros_pkgs: at least 162adead43c51d0be3ca671c29ef0cc145e0dd3a
+					# vision_opencv: at least 1.14.0
+					# image_common: at least 1.12.0 (i did NOT test this one, but it should work)
+wstool merge -t src /tmp/gazebo_ros.rosinstall --merge-keep # --merge-keep prevents the upgrades we have made during the mavros installation from being overwritten
+wstool update -t src -j5
+#sed -i -E 's/find_package\(Boost (.*)python3/find_package\(Boost \1python38/' src/image_common/camera_calibration_parsers/CMakeLists.txt # not needed after the 1.12.0 update to image_common
+sed -i '/python-argparse/d' src/gazebo_ros_pkgs/gazebo_ros/package.xml
+export ROS_PYTHON_VERSION=3
+rosdep install --from-paths src --ignore-src -y --rosdistro melodic --os=ubuntu:bionic # this may complain saying that it cannot find a python-dev. I have no idea why. If this is the only error you get after running this command multiple times (~5?), you're on the clear.
+catkin_make_isolated -DPYTHON_VERSION=3.8 --install
+roslaunch mavros px4.launch fcu_url:="udp://:14540@127.0.0.1:14557" & roslaunch --wait px4 posix_sitl.launch
+rostopic echo /mavros/state
